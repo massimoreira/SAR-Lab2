@@ -1,12 +1,12 @@
 import { Component, OnInit } from '@angular/core';
+import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
-import { FormGroup, FormBuilder, Validators } from '@angular/forms';
 
 // Import services from the barrel file
-import { AuctionService, SocketService, SigninService } from '../../../../core/services';
+import { AuctionService, SigninService, SocketService } from '../../../../core/services';
 
 // Import models from the barrel file 
-import { Item, User, Chat, Marker } from '../../../../core/models';
+import { Chat, Item, Marker, User } from '../../../../core/models';
 
 @Component({
   selector: 'app-auction',
@@ -62,45 +62,45 @@ export class AuctionComponent implements OnInit {
   }
 
 ngOnInit(): void {
-  	 this.message= "Hello " + this.userName + "! Welcome to the SAR auction site.";
+  this.message= "Hello " + this.userName + "! Welcome to the SAR auction site.";
 
-  	 //create bid form
-  	 this.bidForm = this.formBuilder.group({
-      bid: ['', Validators.compose([Validators.required,Validators.pattern("^[0-9]*$")])]
-  	 });
+  //create bid form
+  this.bidForm = this.formBuilder.group({
+  bid: ['', Validators.compose([Validators.required,Validators.pattern("^[0-9]*$")])]
+  });
 
 
-  	 // Get initial item data from the server api using http call in the auctionservice
-     this.auctionservice.getItems()
-        .subscribe({next: result => {
-          let receiveddata = result as Item[]; // cast the received data as an array of items (must be sent like that from server)
-            this.items = receiveddata;
-            console.log ("getItems Auction Component -> received the following items: ", receiveddata);
-        },
-        error: error => this.errorMessage = <any>error });
+  // Get initial item data from the server api using http call in the auctionservice
+  this.auctionservice.getItems()
+    .subscribe({next: result => {
+      let receiveddata = result as Item[]; // cast the received data as an array of items (must be sent like that from server)
+        this.items = receiveddata;
+        console.log ("getItems Auction Component -> received the following items: ", receiveddata);
+    },
+    error: error => this.errorMessage = <any>error });
 
-     // Get initial list of logged in users for googleMaps using http call in the auctionservice
-      this.auctionservice.getUsers()
-        .subscribe({
-          next: result => {
-          let receiveddata = result as User[]; // cast the received data as an array of users (must be sent like that from server)
-            console.log("getUsers Auction Component -> received the following users: ", receiveddata);
-          // do the rest of the needed processing here
-        },
-        error: error => this.errorMessage = <any>error });
+  // Get initial list of logged in users for googleMaps using http call in the auctionservice
+  this.auctionservice.getUsers()
+    .subscribe({
+      next: result => {
+      let receiveddata = result as User[]; // cast the received data as an array of users (must be sent like that from server)
+        console.log("getUsers Auction Component -> received the following users: ", receiveddata);
+      // do the rest of the needed processing here
+    },
+    error: error => this.errorMessage = <any>error });
 
   //subscribe to the incoming websocket events
 
   //example how to subscribe to the server side regularly (each second) items:update event
-      const updateItemsSubscription = this.socketservice.getEvent("update:items")
-                      .subscribe(
-                        data =>{
-                          let receiveddata = data as Item[];
-                            if (this.items){
-                              this.items = receiveddata;
-                            }
-                        }
-                      );
+  const updateItemsSubscription = this.socketservice.getEvent("update:items")
+    .subscribe(
+      data =>{
+        let receiveddata = data as Item[];
+          if (this.items){
+            this.items = receiveddata;
+          }
+      }
+    );
 
   //subscribe to the new user logged in event that must be sent from the server when a client logs in 
   //subscribe to the user logged out event that must be sent from the server when a client logs out 
@@ -144,9 +144,15 @@ ngOnInit(): void {
 
   // function called when the submit bid button is pressed
    submit(){
-  	console.log("submitted bid = ", this.bidForm.value.bid);
-  	//send an event using the websocket for this use the socketservice
-    // example :  this.socketservice.sendEvent('eventname',eventdata);
+    if (this.bidForm.value.bid > this.selectedItem.currentbid) {
+      console.log("submitted bid = ", this.bidForm.value.bid);
+      //send an event using the websocket for this use the socketservice
+      this.socketservice.sendEvent('send:bid',{description: this.selectedItem.description, bid: this.bidForm.value.bid,
+                                    owner: this.selectedItem.owner, username: this.userName});
+    }
+    else {
+      console.error("Bid is lower than current bid");
+    }
   }
   //function called when the user presses the send message button
   sendMessage(){
@@ -169,6 +175,19 @@ ngOnInit(): void {
 //function called when the remove item button is pressed.
   removeItem() {
   //use an HTTP call to the API to remove an item using the auction service.
+    //console.log("Tried to remove item: ", this.selectedItem);
+    this.auctionservice.removeItem(this.selectedItem).subscribe({
+      next: result => {
+        console.log('Item removed', result);
+        // optionally update local state here
+        this.items = this.items.filter(item => item !== this.selectedItem);
+        this.showRemove = false;
+      },
+      error: err => {
+        this.errorMessage = err.message || String(err);
+        console.error('Remove item failed', err);
+      }
+    });
   }
 
   /**

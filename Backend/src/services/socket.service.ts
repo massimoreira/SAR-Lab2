@@ -1,6 +1,7 @@
 import * as jwt from 'jsonwebtoken';
 import { Server, Socket } from 'socket.io';
 import config from '../config/config';
+import Item from '../models/item';
 
 class SocketService {
   private io: Server | null = null;
@@ -63,9 +64,42 @@ class SocketService {
       });
 
       // Handle bid event
-      socket.on('send:bid', (data) => {
+      socket.on('send:bid', async (data) => {
         console.log("send:bid -> Received event send:bid with data = ", data);
-        // Original dummy functionality 
+        const item = await Item.findOne({owner: data.owner, description: data.description});
+        const socketID = this.socketIDbyUsername.get(username);
+        if (socketID == null){
+          console.error("send:bid -> Error on socketID");
+        }
+        else if (item == null) {
+          this.io?.to(socketID).emit('auction:error', {'message': 'Item not found.'});
+          console.error("send:bid -> Item not found");
+        }
+        else if (data.bid <= item.currentbid) {
+          this.io?.to(socketID).emit('auction:error', {'message': 'Bid is lower than current bid.', 'currentbid': item.currentbid});
+          console.error("send:bid -> Bid ", data.bid, " is lower than current bid.");
+        }
+        else if (data.bid > item.buynow) {
+          this.io?.to(socketID).emit('auction:error', {'message': 'Bid is higher than buy now value.', 'buynow': item.buynow});
+          console.error("send:bid -> Bid ", data.bid, " is higher than buy now value.");
+        }
+        // POR FAZER: nao deve ser so isto
+        else if (data.bid === item.buynow) {
+          //item.sold = true;
+          //item.owner = username;
+          await Item.updateOne({owner: data.owner, description: data.description}, {sold: true, owner: username});
+          this.io?.emit("update:items", await Item.find());
+          console.log("send:bid -> User", username, "bougth the item:", item.description);
+        }
+        else {
+          //item.currentbid = data.bid;
+          //item.wininguser = username;
+          await Item.updateOne({owner: data.owner, description: data.description}, {currentbid: data.bid, wininguser: username});
+          const item2 = await Item.findOne({owner: data.owner, description: data.description});
+          console.log("Item updated:", item2);
+          this.io?.emit("update:items", await Item.find());
+          console.log("send:bid -> User", username, "placed a bid on the item:", item.description);
+        }
       });
 
       // Handle message event
@@ -79,6 +113,7 @@ class SocketService {
         const username = this.usernamebySocketID.get(socket.id);
         if (username) {
           this.socketIDbyUsername.delete(username);
+          // POR FAZER: insert islogged = false
         }
         this.usernamebySocketID.delete(socket.id);
       });

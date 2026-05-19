@@ -1,72 +1,58 @@
 import { Request, Response } from 'express';
+import Item from "../models/item";
 
 /**
  * Create a new item
- * Note: original dummy functionality
  */
-export const createItem = (req: Request, res: Response): void => {
+export const createItem = async (req: Request, res: Response): Promise<void> => {
   console.log("NewItem -> received form submission new item");
   console.log(req.body);
   
-  // Send dummy response as in the original code
-  res.json({
-    description: "somedescription",
-    currentbid: "somecurrentbid",
-    remainingtime: "someremainingtime",
-    wininguser: "somewininguser"
-  });
+  try {
+    const item = await Item.create({
+      description: req.body.description,
+      currentbid: req.body.currentbid,
+      buynow: req.body.buynow,
+      remainingtime: req.body.remainingtime,
+      owner: req.body.owner,
+      wininguser: '',
+      sold: false,
+      // falta meter id?
+    });
+    // funciona?
+    //item.id = item._id;
+    res.status(201).json(item);
+  }
+  catch (error) {
+    console.error("Error creating item: ", error);
+    res.status(500).json({message: "Error creating item"});
+  }
 };
 
 /**
  * Remove an existing item
- * Note: original dummy functionality
  */
-export const removeItem = (req: Request, res: Response): void => {
+export const removeItem = async (req: Request, res: Response): Promise<void> => {
   console.log("RemoveItem -> received form submission remove item");
   console.log(req.body);
-  
-  // No response was sent in the original code
-  res.status(200).end();
+
+  try {
+    // usar _id para identificar?
+    const item = await Item.deleteOne({owner: req.body.owner, description: req.body.description});
+    res.status(200).json({item});
+  }
+  catch (error) {
+    console.error("Error deleting item: ", error);
+    res.status(500).json({message:"Error deleting item"});
+  }
 };
 
 /**
  * Get all items
- * Note: original dummy functionality
  */
-export const getItems = (req: Request, res: Response): void => {
-  // Create dummy items 
-  const items = [
-    {
-      description: 'Smartphone',
-      currentbid: 250,
-      remainingtime: 120,
-      buynow: 1000,
-      wininguser: 'dummyuser1',
-      sold: false,
-      owner: 'dummyowner1',
-      id: 1
-    },
-    {
-      description: 'Tablet',
-      currentbid: 300,
-      remainingtime: 120,
-      buynow: 940,
-      wininguser: 'dummyuser2',
-      sold: false,
-      owner: 'dummyowner2',
-      id: 2
-    },
-    {
-      description: 'Computer',
-      currentbid: 120,
-      remainingtime: 120,
-      buynow: 880,
-      wininguser: 'dummyuser3',
-      sold: false,
-      owner: 'dummyowner3',
-      id: 3
-    }
-  ];
+export const getItems = async (req: Request, res: Response): Promise<void> => {
+  // Get all items
+  const items = await Item.find();
   
   // Send response
   res.json(items);
