@@ -1,11 +1,9 @@
+import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { Injectable } from '@angular/core';
-import { throwError, Observable } from 'rxjs';
-import { HttpClient, HttpHeaders, HttpResponse, HttpErrorResponse } from '@angular/common/http';
-import { catchError, map, tap } from 'rxjs/operators';
+import { throwError } from 'rxjs';
+import { catchError } from 'rxjs/operators';
 import { SigninService } from './signin.service';
 // Add any models that might be needed
-import { Item } from '../models/item';
-import { User } from '../models/user';
 
 @Injectable({
   providedIn: 'root'
@@ -43,7 +41,7 @@ export class AuctionService {
    }
 
   removeItem (item: any) {
-    console.log("auctiob service removeItem -> Removing an item.");
+    console.log("auction service removeItem -> Removing an item.");
     let headers = new HttpHeaders({ 'Authorization': 'Bearer ' + this.signinService.token.token }); // insert tokern in the requests
     let options = { headers: headers };
 

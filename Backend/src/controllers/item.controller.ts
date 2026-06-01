@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
 import Item from "../models/item";
+//import User from '../models/user';
+import { findItemsOwnedByLoggedUsers } from '../services/item.service';
 
 /**
  * Create a new item
@@ -17,10 +19,7 @@ export const createItem = async (req: Request, res: Response): Promise<void> => 
       owner: req.body.owner,
       wininguser: '',
       sold: false,
-      // falta meter id?
     });
-    // funciona?
-    //item.id = item._id;
     res.status(201).json(item);
   }
   catch (error) {
@@ -52,9 +51,16 @@ export const removeItem = async (req: Request, res: Response): Promise<void> => 
  */
 export const getItems = async (req: Request, res: Response): Promise<void> => {
   // Get all items
-  const items = await Item.find();
-  
-  // Send response
-  res.json(items);
-  console.log("received get Items call responded with: ", items);
+  try{
+    const items = await findItemsOwnedByLoggedUsers();
+    
+    // Send response
+    res.json(items);
+    console.log("received get Items call responded with: ", items);
+  }
+
+  catch (error) {
+    console.error("Error fetching items: ", error);
+    res.status(500).json({message:"Error fetching items"});
+  }
 };

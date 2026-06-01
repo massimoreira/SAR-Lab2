@@ -85,7 +85,7 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
  */
 export const getUsers = async (req: Request, res: Response): Promise<void> => {
   // Go to the database and get all users
-  const users = await User.find();
+  const users = await User.find({islogged: true});
 
   res.json(users);
 };

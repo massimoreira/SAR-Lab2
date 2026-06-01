@@ -6,6 +6,7 @@ import { Router } from '@angular/router';
 import { AuctionService, SigninService, SocketService } from '../../../../core/services';
 
 // Import models from the barrel file 
+import { Subscription } from 'rxjs';
 import { Chat, Item, Marker, User } from '../../../../core/models';
 
 @Component({
@@ -23,7 +24,8 @@ export class AuctionComponent implements OnInit {
   ChatMessage: string; // message string: string; // message string
   showBid: boolean;  //boolean to control if the show bid form is placed in the DOM
   showMessage: boolean; //boolean to control if the send message form is placed in the DOM
-  selectedItem!: Item; //Selected Item
+  selectedItem: Item | undefined; //Selected Item
+  selectedChat: Chat | undefined;
   bidForm! : FormGroup; //FormGroup for the biding
   userName!: string;
   errorMessage: string; //string to store error messages received in the interaction with the api
@@ -35,6 +37,9 @@ export class AuctionComponent implements OnInit {
   soldHistory: string[];
   chats: Chat[]; //array for storing chat messages
   counter: number;
+  updateItemsSubscription!: Subscription;
+  receiveMessageSubscription!: Subscription;
+  receiveInfoSubscription!: Subscription;
 
   constructor( private formBuilder: FormBuilder, private router: Router, private socketservice: SocketService, private auctionservice: AuctionService,
    private signinservice: SigninService) {
@@ -62,7 +67,7 @@ export class AuctionComponent implements OnInit {
   }
 
 ngOnInit(): void {
-  this.message= "Hello " + this.userName + "! Welcome to the SAR auction site.";
+  this.showMessageTab("Hello " + this.userName + "! Welcome to the SAR auction site.");
 
   //create bid form
   this.bidForm = this.formBuilder.group({
@@ -90,14 +95,33 @@ ngOnInit(): void {
     error: error => this.errorMessage = <any>error });
 
   //subscribe to the incoming websocket events
+  this.receiveInfoSubscription = this.socketservice.getEvent("send:info")
+    .subscribe(
+      data => {
+        let receiveddata = data as string;
+        this.soldHistory.push(receiveddata);
+      }
+    );
 
-  //example how to subscribe to the server side regularly (each second) items:update event
-  const updateItemsSubscription = this.socketservice.getEvent("update:items")
+  //subscribe to the server side regularly (each second) items:update event
+  this.updateItemsSubscription = this.socketservice.getEvent("update:items")
     .subscribe(
       data =>{
         let receiveddata = data as Item[];
-          if (this.items){
-            this.items = receiveddata;
+          this.items = receiveddata;
+          if (this.selectedItem) {
+            const item = receiveddata.find(i => 
+              i.owner === this.selectedItem!.owner && 
+              i.description === this.selectedItem!.description
+              );
+            if (item) this.selectedItem = item;
+            else {
+              this.selectedItem = undefined;
+              this.showBid = false;
+              this.showRemove = false;
+              this.showMessage = false;
+            }
+          //findOne({owner: this.selectedItem.owner, description: this.selectedItem.description});
           }
       }
     );
@@ -105,6 +129,15 @@ ngOnInit(): void {
   //subscribe to the new user logged in event that must be sent from the server when a client logs in 
   //subscribe to the user logged out event that must be sent from the server when a client logs out 
   //subscribe to a receive:message event to receive message events sent by the server 
+  this.receiveMessageSubscription = this.socketservice.getEvent("receive:message")
+    .subscribe(
+      data => {
+        let receiveddata = data as Chat;
+        this.chats.push(receiveddata);
+        this.showMessage = true;
+        console.log("User", this.userName, "received a message =", receiveddata.message, "from:", receiveddata.sender);
+      }
+    )
   //subscribe to the item sold event sent by the server for each item that ends.
     
   //subscription to any other events must be performed here inside the ngOnInit function
@@ -112,6 +145,8 @@ ngOnInit(): void {
   }
 
    logout(){
+    this.updateItemsSubscription.unsubscribe();
+    this.receiveMessageSubscription.unsubscribe();
     //call the logout function in the signInService to clear the token in the browser
     this.signinservice.logout();  // Tem que estar em primeiro para ser apagado o token e nao permitir mais reconnects pelo socket
   	//perform any needed logout logic here
@@ -139,24 +174,40 @@ ngOnInit(): void {
 
   //function called when a received message is selected. 
   onMessageSender(ClickedChat: Chat) {
-    //destination is now the sender of the selected received message. 
+    console.log("Selected Chat:", ClickedChat);
+    this.selectedChat = ClickedChat;
+  }
+
+  showMessageTab(text: string) {
+    this.message = text;
+    setTimeout(() => this.message = '', 5000);
   }
 
   // function called when the submit bid button is pressed
    submit(){
-    if (this.bidForm.value.bid > this.selectedItem.currentbid) {
+    if (this.bidForm.value.bid > this.selectedItem!.currentbid) {
       console.log("submitted bid = ", this.bidForm.value.bid);
       //send an event using the websocket for this use the socketservice
-      this.socketservice.sendEvent('send:bid',{description: this.selectedItem.description, bid: this.bidForm.value.bid,
-                                    owner: this.selectedItem.owner, username: this.userName});
+      this.socketservice.sendEvent('send:bid',{item: this.selectedItem, bid: this.bidForm.value.bid});
     }
     else {
-      console.error("Bid is lower than current bid");
+      console.error("Bid is lower or equal to current bid");
+      this.showMessageTab("Bid is lower or equal to current bid");
     }
   }
   //function called when the user presses the send message button
   sendMessage(){
-    console.log("Message  = ", this.ChatMessage);
+    var chat;
+
+    if (this.selectedChat) {
+      //destination is now the sender of the selected received message.
+      chat = new Chat(this.selectedChat!.receiver, this.ChatMessage, this.selectedChat!.sender);
+    }
+    else {chat = new Chat(this.userName, this.ChatMessage, this.selectedItem!.owner);}
+
+    console.log("User", chat.sender, "sent a message =", this.ChatMessage, "to:", chat.receiver);
+    
+    this.socketservice.sendEvent("send:message", chat);
   }
 
   //function called when the cancel bid button is pressed.
@@ -165,14 +216,14 @@ ngOnInit(): void {
    }
 
    //function called when the buy now button is pressed.
-
    buyNow(){
    	this.bidForm.setValue({              /// sets the field value to the buy now value of the selected item
-   		bid: this.selectedItem.buynow
+   		bid: this.selectedItem!.buynow
    	});
-   	this.message= this.userName + " please press the Submit Bid button to procced with the Buy now order.";
+   	this.showMessageTab(this.userName + " please press the Submit Bid button to procced with the Buy now order.");
    }
-//function called when the remove item button is pressed.
+
+  //function called when the remove item button is pressed.
   removeItem() {
   //use an HTTP call to the API to remove an item using the auction service.
     //console.log("Tried to remove item: ", this.selectedItem);

@@ -2,6 +2,8 @@ import * as jwt from 'jsonwebtoken';
 import { Server, Socket } from 'socket.io';
 import config from '../config/config';
 import Item from '../models/item';
+import User from '../models/user';
+import { findItemsOwnedByLoggedUsers } from '../services/item.service';
 
 class SocketService {
   private io: Server | null = null;
@@ -59,45 +61,50 @@ class SocketService {
       this.usernamebySocketID.set(socket.id, username);
 
       // Handle new user event
-      socket.on('newUser:username', (data) => {
+      socket.on('newUser:username', async (data) => {
         console.log("newUser:username -> New user event received: ", data);
+        await User.updateOne({username: username}, {islogged: true});
+        this.newLoggedUserBroadcast(username);
       });
 
       // Handle bid event
       socket.on('send:bid', async (data) => {
         console.log("send:bid -> Received event send:bid with data = ", data);
-        const item = await Item.findOne({owner: data.owner, description: data.description});
-        const socketID = this.socketIDbyUsername.get(username);
-        if (socketID == null){
+        const itemSent = data.item;
+        const item = await Item.findOne({_id: itemSent._id});
+        if (socket.id == null){
           console.error("send:bid -> Error on socketID");
         }
         else if (item == null) {
-          this.io?.to(socketID).emit('auction:error', {'message': 'Item not found.'});
+          this.io?.to(socket.id).emit('auction:error', {'message': 'Item not found.'});
           console.error("send:bid -> Item not found");
         }
         else if (data.bid <= item.currentbid) {
-          this.io?.to(socketID).emit('auction:error', {'message': 'Bid is lower than current bid.', 'currentbid': item.currentbid});
+          this.io?.to(socket.id).emit('auction:error', {'message': 'Bid is lower than current bid.', 'currentbid': item.currentbid});
           console.error("send:bid -> Bid ", data.bid, " is lower than current bid.");
         }
         else if (data.bid > item.buynow) {
-          this.io?.to(socketID).emit('auction:error', {'message': 'Bid is higher than buy now value.', 'buynow': item.buynow});
+          this.io?.to(socket.id).emit('auction:error', {'message': 'Bid is higher than buy now value.', 'buynow': item.buynow});
           console.error("send:bid -> Bid ", data.bid, " is higher than buy now value.");
         }
-        // POR FAZER: nao deve ser so isto
+        else if (item.sold) {
+          this.io?.to(socket.id).emit('auction:error', {'message': 'Auction already closed'});
+          console.error("send:bid -> Auction already closed");
+        }
         else if (data.bid === item.buynow) {
-          //item.sold = true;
-          //item.owner = username;
-          await Item.updateOne({owner: data.owner, description: data.description}, {sold: true, owner: username});
-          this.io?.emit("update:items", await Item.find());
+          item.currentbid = data.bid;
+          item.wininguser = username;
+          await this.processBidWinner(item);
+          //this.io?.emit("update:items", await Item.find());
           console.log("send:bid -> User", username, "bougth the item:", item.description);
         }
         else {
           //item.currentbid = data.bid;
           //item.wininguser = username;
-          await Item.updateOne({owner: data.owner, description: data.description}, {currentbid: data.bid, wininguser: username});
-          const item2 = await Item.findOne({owner: data.owner, description: data.description});
+          await Item.updateOne({_id: itemSent._id}, {currentbid: data.bid, wininguser: username});
+          const item2 = await Item.findOne({_id: itemSent._id});
           console.log("Item updated:", item2);
-          this.io?.emit("update:items", await Item.find());
+          //this.io?.emit("update:items", await Item.find());
           console.log("send:bid -> User", username, "placed a bid on the item:", item.description);
         }
       });
@@ -105,17 +112,21 @@ class SocketService {
       // Handle message event
       socket.on('send:message', (chat) => {
         console.log("send:message received with -> ", chat);
+        const destination = this.socketIDbyUsername.get(chat.receiver);
+        if (destination)
+          this.io?.to(destination).emit("receive:message", chat);
       });
 
       // Handle disconnection
-      socket.on('disconnect', () => {
+      socket.on('disconnect', async () => {
         console.log("User disconnected");
         const username = this.usernamebySocketID.get(socket.id);
         if (username) {
           this.socketIDbyUsername.delete(username);
-          // POR FAZER: insert islogged = false
+          await User.updateOne({username: username}, {islogged: false});
         }
         this.usernamebySocketID.delete(socket.id);
+        this.userLoggedOutBroadcast(username);
       });
     });
   }
@@ -123,18 +134,41 @@ class SocketService {
   /**
    * Start auction timer for item remaining time updates
    */
-  private startAuctionTimer(): void {
+  private async startAuctionTimer(): Promise<void> {
     // Timer function to decrement remaining time 
-    this.intervalId = setInterval(() => {
-      //  update item times here
-      // add actual database operations
+    this.intervalId = setInterval(async () => {
+      for (const item of await findItemsOwnedByLoggedUsers()) {
+        if (item.remainingtime <= 1) {
+          // process bid winner
+          this.processBidWinner(item);
+        }
+        // retract time
+        else await Item.updateOne({_id: item._id}, {remainingtime: item.remainingtime - 1});
+      }
+      this.io?.emit("update:items", await findItemsOwnedByLoggedUsers());
     }, 1000);
   }
 
   /**
+   * Process bid winner
+   */
+  private async processBidWinner(item: any): Promise<void> {
+    // no one made a bid
+    if (!item.wininguser) {
+      console.log("No one bid on the item", item.description, "and it returned to the owner");
+      await Item.updateOne({_id: item._id}, {remainingtime: undefined, buynow: undefined, sold: true});
+    }
+    else {
+      console.log("Item", item.description, "sold to user", item.wininguser);
+      await Item.updateOne({_id:item._id}, {owner: item.wininguser, remainingtime: undefined, buynow: undefined, sold: true, wininguser: undefined});
+      this.itemSoldBroadcast(item);
+    }
+  }
+  
+  /**
    * Broadcast new logged-in user to all clients
    */
-  public newLoggedUserBroadcast(newUser: any): void {
+  private newLoggedUserBroadcast(newUser: any): void {
     if (this.io) {
       for (const socketID of this.socketIDbyUsername.values()) {
         this.io.to(socketID).emit('new:item', newUser);
@@ -145,8 +179,8 @@ class SocketService {
   /**
    * Broadcast user logged-out event to all clients
    */
-  public userLoggedOutBroadcast(loggedOutUser: any): void {
-    console.log('RemoveItemBroadcast -> ', loggedOutUser);
+  private userLoggedOutBroadcast(loggedOutUser: any): void {
+    console.log('UserLoggerOutBroadcast -> ', loggedOutUser);
     if (this.io) {
       for (const socketID of this.socketIDbyUsername.values()) {
         this.io.to(socketID).emit('remove:item', loggedOutUser);
@@ -155,9 +189,22 @@ class SocketService {
   }
 
   /**
+   * Broadcast item sold
+   */
+  private itemSoldBroadcast(item: any): void {
+    console.log("Sent bid closure info about item:", item.description);
+    if (this.io) {
+      const message = "Item " + item.description + " sold to " + item.wininguser + " for " + item.currentbid;
+      for (const socketID of this.socketIDbyUsername.values()) {
+        this.io.to(socketID).emit('send:info', message);
+      }
+    }
+  }
+
+  /**
    * Clean up resources
    */
-  public cleanup(): void {
+  private cleanup(): void {
     if (this.intervalId) {
       clearInterval(this.intervalId);
     }

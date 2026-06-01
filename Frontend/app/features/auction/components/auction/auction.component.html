@@ -198,6 +198,14 @@
             </mat-card-content>
           </mat-card>
 
+           <!-- Floating message tab -->
+          <div class="message-tab" *ngIf="message">
+            <span>{{ message }}</span>
+            <button mat-icon-button aria-label="Close message" (click)="message = ''">
+              <mat-icon>close</mat-icon>
+            </button>
+          </div>
+
           <!-- Chat Panel -->
           <mat-card class="chat-panel mat-elevation-z3" *ngIf="showMessage">
             <mat-card-header>
@@ -209,12 +217,17 @@
             <mat-card-content class="message-container">
               <div class="scrollable">
                 <mat-list class="chat-list">
-                  <mat-list-item *ngFor="let chat of chats" (click)="onMessageSender(chat)" class="chat-item">
-                    <mat-icon mat-list-icon>person</mat-icon>
-                    <div mat-line class="chat-sender">{{ chat.sender }}</div>
-                    <div mat-line class="chat-message">{{ chat.message }}</div>
+                  <ng-container *ngIf="chats.length; else noChats">
+                    <mat-list-item *ngFor="let chat of chats" (click)="onMessageSender(chat)" class="chat-item">
+                      <mat-icon mat-list-icon>person</mat-icon>
+                      <div mat-line class="chat-sender">{{ chat.sender }}</div>
+                      <div mat-line class="chat-message">{{ chat.message }}</div>
+                    </mat-list-item>
                     <mat-divider></mat-divider>
-                  </mat-list-item>
+                  </ng-container>
+                  <ng-template #noChats>
+                    <div class="empty-chat">No messages yet</div>
+                  </ng-template>
                 </mat-list>
               </div>    
               <div class="sendmessage-container" *ngIf="showMessage">
