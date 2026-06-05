@@ -6,6 +6,7 @@ export class Item {
       public remainingtime: number,
       public buynow: number,
       public wininguser: string,
-      public owner: string
+      public owner: string,
+      public _id?: any
 	){}
 }

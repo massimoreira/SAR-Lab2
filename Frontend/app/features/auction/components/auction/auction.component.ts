@@ -19,7 +19,8 @@ export class AuctionComponent implements OnInit {
   items: Item[]; //array of items to store the items.
   users: User[];
   displayedColumns: string[] //Array of Strings with the table column names
-  message: string; // message string
+  message: string; // temporary message string
+  messageTimeout?: number;
   destination : string; //string with the destination of the current message to send. 
   ChatMessage: string; // message string: string; // message string
   showBid: boolean;  //boolean to control if the show bid form is placed in the DOM
@@ -98,8 +99,17 @@ ngOnInit(): void {
   this.receiveInfoSubscription = this.socketservice.getEvent("send:info")
     .subscribe(
       data => {
-        let receiveddata = data as string;
+        let receiveddata = data.message as string;
         this.soldHistory.push(receiveddata);
+      }
+    );
+
+  //subscribe to the incoming confirmation/error messages
+  this.receiveInfoSubscription = this.socketservice.getEvent("send:shortmessage")
+    .subscribe(
+      data => {
+        let receiveddata = data.message as string;
+        this.showMessageTab(receiveddata);
       }
     );
 
@@ -111,8 +121,7 @@ ngOnInit(): void {
           this.items = receiveddata;
           if (this.selectedItem) {
             const item = receiveddata.find(i => 
-              i.owner === this.selectedItem!.owner && 
-              i.description === this.selectedItem!.description
+              i._id === this.selectedItem!._id
               );
             if (item) this.selectedItem = item;
             else {
@@ -179,8 +188,11 @@ ngOnInit(): void {
   }
 
   showMessageTab(text: string) {
+    if (this.messageTimeout)
+      clearTimeout(this.messageTimeout);
+    
     this.message = text;
-    setTimeout(() => this.message = '', 5000);
+    this.messageTimeout = window.setTimeout(() => {this.message = ''; this.messageTimeout = undefined}, 5000);
   }
 
   // function called when the submit bid button is pressed
@@ -188,7 +200,19 @@ ngOnInit(): void {
     if (this.bidForm.value.bid > this.selectedItem!.currentbid) {
       console.log("submitted bid = ", this.bidForm.value.bid);
       //send an event using the websocket for this use the socketservice
-      this.socketservice.sendEvent('send:bid',{item: this.selectedItem, bid: this.bidForm.value.bid});
+      //this.socketservice.sendEvent('send:bid',{item: this.selectedItem, bid: this.bidForm.value.bid, username: this.userName});
+      this.auctionservice.submitBid(this.selectedItem, this.userName, this.bidForm.value.bid).subscribe({
+        next: result => {
+          // update locally
+          this.selectedItem!.currentbid = this.bidForm.value.bid;
+          this.selectedItem!.wininguser = this.userName;
+
+          this.showMessageTab(result.message);
+        },
+        error: result => {
+          this.showMessageTab(result.message);
+        }
+      })
     }
     else {
       console.error("Bid is lower or equal to current bid");
@@ -197,7 +221,7 @@ ngOnInit(): void {
   }
   //function called when the user presses the send message button
   sendMessage(){
-    var chat;
+    let chat;
 
     if (this.selectedChat) {
       //destination is now the sender of the selected received message.

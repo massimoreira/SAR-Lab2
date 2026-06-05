@@ -2,26 +2,25 @@
  * Express app to serve Angular single page auction site
  * Modernized with TypeScript and best practices
  */
-import express from 'express';
-import fs from 'fs';
-import path from 'path';
-import favicon from 'serve-favicon';
-import morgan from 'morgan';
+import bodyParser from 'body-parser';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
+import express, { Request, Response } from 'express';
+import fs from 'fs';
 import helmet from 'helmet';
 import http from 'http';
 import https from 'https';
+import morgan from 'morgan';
+import path from 'path';
+import favicon from 'serve-favicon';
 import { Server } from 'socket.io';
-import bodyParser from 'body-parser';
-import { Request, Response } from 'express';
 
 // Import custom modules
 import config from './config/config';
 import { connectDatabase } from './config/db';
+import errorHandler from './middlewares/errorHandler';
 import apiRoutes from './routes/api.routes';
 import socketService from './services/socket.service';
-import errorHandler from './middlewares/errorHandler';
 
 // Initialize express app
 const app = express();
@@ -151,3 +150,5 @@ process.on('unhandledRejection', (err) => {
 
 // Start the server
 startServer();
+
+export { socketService };

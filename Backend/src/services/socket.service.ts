@@ -67,48 +67,6 @@ class SocketService {
         this.newLoggedUserBroadcast(username);
       });
 
-      // Handle bid event
-      socket.on('send:bid', async (data) => {
-        console.log("send:bid -> Received event send:bid with data = ", data);
-        const itemSent = data.item;
-        const item = await Item.findOne({_id: itemSent._id});
-        if (socket.id == null){
-          console.error("send:bid -> Error on socketID");
-        }
-        else if (item == null) {
-          this.io?.to(socket.id).emit('auction:error', {'message': 'Item not found.'});
-          console.error("send:bid -> Item not found");
-        }
-        else if (data.bid <= item.currentbid) {
-          this.io?.to(socket.id).emit('auction:error', {'message': 'Bid is lower than current bid.', 'currentbid': item.currentbid});
-          console.error("send:bid -> Bid ", data.bid, " is lower than current bid.");
-        }
-        else if (data.bid > item.buynow) {
-          this.io?.to(socket.id).emit('auction:error', {'message': 'Bid is higher than buy now value.', 'buynow': item.buynow});
-          console.error("send:bid -> Bid ", data.bid, " is higher than buy now value.");
-        }
-        else if (item.sold) {
-          this.io?.to(socket.id).emit('auction:error', {'message': 'Auction already closed'});
-          console.error("send:bid -> Auction already closed");
-        }
-        else if (data.bid === item.buynow) {
-          item.currentbid = data.bid;
-          item.wininguser = username;
-          await this.processBidWinner(item);
-          //this.io?.emit("update:items", await Item.find());
-          console.log("send:bid -> User", username, "bougth the item:", item.description);
-        }
-        else {
-          //item.currentbid = data.bid;
-          //item.wininguser = username;
-          await Item.updateOne({_id: itemSent._id}, {currentbid: data.bid, wininguser: username});
-          const item2 = await Item.findOne({_id: itemSent._id});
-          console.log("Item updated:", item2);
-          //this.io?.emit("update:items", await Item.find());
-          console.log("send:bid -> User", username, "placed a bid on the item:", item.description);
-        }
-      });
-
       // Handle message event
       socket.on('send:message', (chat) => {
         console.log("send:message received with -> ", chat);
@@ -191,12 +149,12 @@ class SocketService {
   /**
    * Broadcast item sold
    */
-  private itemSoldBroadcast(item: any): void {
+  public itemSoldBroadcast(item: any): void {
     console.log("Sent bid closure info about item:", item.description);
     if (this.io) {
       const message = "Item " + item.description + " sold to " + item.wininguser + " for " + item.currentbid;
       for (const socketID of this.socketIDbyUsername.values()) {
-        this.io.to(socketID).emit('send:info', message);
+        this.io.to(socketID).emit('send:info', {message: message});
       }
     }
   }

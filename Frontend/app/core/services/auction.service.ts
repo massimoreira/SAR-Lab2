@@ -51,6 +51,18 @@ export class AuctionService {
       );
   }
 
+  submitBid (item: any, username: any, bid: number) {
+    console.log("auction service submitBid -> Placing a bid.");
+    let headers = new HttpHeaders({ 'Authorization': 'Bearer ' + this.signinService.token.token }); // insert tokern in the requests
+    let options = { headers: headers };
+    let body = {item: item, username:username, bid:bid};
+    
+    return this.http.post<any>("/api/submitbid", body, options)
+      .pipe(
+        catchError(this.handleError)
+      );
+  }  
+
      /**
    * Handle Http operation that failed.
    */
